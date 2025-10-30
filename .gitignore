@@ -1,0 +1,7 @@
+.env
+cert.pem
+key.pem
+start_server.txt
+__pycache__/
+*.pyc
+venv
