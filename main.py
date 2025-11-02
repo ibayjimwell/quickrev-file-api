@@ -1,10 +1,12 @@
-from fastapi import FastAPI, UploadFile, File, Form, Depends, APIRouter
+from fastapi import FastAPI, UploadFile, File, Form, Depends, APIRouter, Query
 from controllers.generate_controller import generate_reviewer_endpoint, generate_flashcards_endpoint
 from controllers.convert_controller import download_reviewer_docx_endpoint
-from controllers.cloud_controlller import upload_file_endpoint
-from core.dependencies.auth import get_appwrite_user
+from controllers.cloud_controlller import upload_file_endpoint, files_listing_endpoint, view_file_endpoint, file_association_endpoint
 from fastapi.middleware.cors import CORSMiddleware
 
+# Import environment variables
+from dotenv import load_dotenv
+load_dotenv()
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -14,9 +16,7 @@ app = FastAPI(
 )
 
 origins = [
-    "https://localhost:5173",  # Your Vite development server
-    "https://127.0.0.1:5173",  # Just in case
-    # Add any other deployment URLs here later
+    "*"
 ]
 
 app.add_middleware(
@@ -26,20 +26,6 @@ app.add_middleware(
     allow_methods=["*"],    # Allow all HTTP methods (POST, GET, etc.)
     allow_headers=["*"],    # Allow all headers
 )
-
-# --- NEW: Auth Router ---
-auth_router = APIRouter(prefix="/auth", tags=["Authentication"])
-
-@auth_router.get("/me")
-async def get_current_user_endpoint(
-    # The dependency runs first; if successful, user_id is the verified ID.
-    user_id: str = Depends(get_appwrite_user) 
-):
-    """Returns the user's verified ID, confirming the session is active."""
-    return {"user_id": user_id, "is_authenticated": True}
-
-# Add the new router to the app
-app.include_router(auth_router)
 
 # Root endpoint
 @app.get("/")
@@ -55,7 +41,7 @@ async def tester():
 @app.post("/generate/reviewer")
 async def generate_reviewer(
         file_id: str = Form(...),
-        user_id: str = Depends(get_appwrite_user),
+        user_id: str = Form(...),
     ):
     return await generate_reviewer_endpoint(file_id, user_id)
 
@@ -63,7 +49,7 @@ async def generate_reviewer(
 @app.post("/generate/flashcards")
 async def generate_flashcards(
         file_id: str = Form(...), 
-        user_id: str = Depends(get_appwrite_user),
+        user_id: str = Form(...),
         items: int = Form(40),
         multiple_choice: bool = Form(True),
         identification: bool = Form(True),
@@ -83,7 +69,30 @@ async def download_reviewer_docx(
 @app.post('/cloud/file/upload')
 async def upload_file(
         file: UploadFile = File(...),
-        user_id: str = Depends(get_appwrite_user),
+        user_id: str =Form(...),
     ):
     return await upload_file_endpoint(file, user_id)
+
+
+# List Files
+@app.get("/cloud/file/list")
+async def files_listing(
+        user_id: str = Query(..., description="The ID of the user whose files to retrieve."),
+        type: str = Query("original", description="The type of file to filter by (default: original).")
+    ):
+    return await files_listing_endpoint(user_id, type)
+
+# View File
+@app.get("/cloud/file/view")
+async def view_file(
+        file_id: str = Query(..., description="The ID of the file to view (Appwrite file_id).")
+    ):
+    return await view_file_endpoint(file_id)
+
+# List Association
+@app.get("/cloud/file/associate")
+async def file_association(
+        source_file_id: str = Query(..., description="The Appwrite file_id of the original lesson file (the source).")
+    ):
+    return await file_association_endpoint(source_file_id)
 

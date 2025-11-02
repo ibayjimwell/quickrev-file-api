@@ -13,12 +13,10 @@ from core.converter.converters import convert_pdf_to_txt, convert_pptx_to_txt, c
 from core.cleaner.cleaner import clean_txt
 from core.generator.generators import generate_reviewer, generate_flashcards
 from core.cloud.appwrite import cloud_storage, cloud_database
-from core.dependencies.auth import get_appwrite_user
-
 
 async def generate_reviewer_endpoint(
     file_id: str = Form(...),
-    user_id: str = Depends(get_appwrite_user),
+    user_id: str = Form(...),
 ):
     # Configuration Constants
     APPWRITE_BUCKET_ID = os.environ.get("APPWRITE_BUCKET_ID")
@@ -179,7 +177,7 @@ async def generate_reviewer_endpoint(
 
 async def generate_flashcards_endpoint(
     file_id: str = Form(...), 
-    user_id: str = Depends(get_appwrite_user),
+    user_id: str = Form(...),
     items: int = Form(40),
     multiple_choice: bool = Form(True),
     identification: bool = Form(True),

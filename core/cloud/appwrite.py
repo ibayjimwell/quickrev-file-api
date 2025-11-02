@@ -1,3 +1,7 @@
+# ======================================
+# core/cloud/appwrite.py (CONFIRMED STRUCTURE)
+# ======================================
+
 import os
 from appwrite.client import Client
 from appwrite.services.storage import Storage
@@ -9,20 +13,15 @@ APPWRITE_ENDPOINT = os.environ.get("APPWRITE_ENDPOINT")
 APPWRITE_PROJECT_ID = os.environ.get("APPWRITE_PROJECT_ID")
 APPWRITE_API_KEY = os.environ.get("APPWRITE_API_KEY")
 
-# --- Initialize Appwrite Client ---
-client = Client()
+client = Client() 
 (client
- .set_endpoint(APPWRITE_ENDPOINT)
- .set_project(APPWRITE_PROJECT_ID)
- .set_key(APPWRITE_API_KEY)
- )
+    .set_endpoint(APPWRITE_ENDPOINT)
+    .set_project(APPWRITE_PROJECT_ID)
+    .set_key(APPWRITE_API_KEY)
+)
 
-# --- Initialize Appwrite Services ---
-storage = Storage(client)
-database = Databases(client)
-account = Account(client)
+cloud_storage = Storage(client)
+cloud_database = Databases(client)
+cloud_account = Account(client)
 
-# Export the Storage instance
-cloud_storage = storage
-cloud_database = database
-cloud_account = account
+    
