@@ -23,94 +23,61 @@ def cleanup_temp_files(path1: str, path2: str):
     # Use BackgroundTask for Starlette/FastAPI's preferred way of handling cleanup
     return BackgroundTask(cleanup)
 
-from pydantic import BaseModel
-from typing import Optional
-from fastapi import Body
-class DocxConvertRequest(BaseModel):
-    """
-    Request model for DOCX conversion where both fields are optional.
-    If 'content' is missing, the endpoint logic will fall back to downloading
-    the content using 'reviewer_file_id'.
-    """
-    reviewer_file_id: Optional[str] = None
-    content: Optional[str] = None # REVISED: Now Optional[str] with default of None
-
 async def download_reviewer_docx_endpoint(
-    request_data: DocxConvertRequest = Body(...),
-):
+        reviewer_file_id: str = Form(...),
+    ):
     """
-    Converts MD content to DOCX. It prioritizes the 'content' field from the request body.
-    If 'content' is missing, it falls back to downloading the file using 'reviewer_file_id'.
+    Downloads the reviewer MD file from Appwrite, converts it to DOCX, and forces download.
+    The filename is fetched from Appwrite Storage metadata.
     """
-    reviewer_file_id = request_data.reviewer_file_id
-    markdown_content = request_data.content
     
-    # Check for minimum required data
-    if not markdown_content and not reviewer_file_id:
-         raise HTTPException(
-             status_code=status.HTTP_400_BAD_REQUEST,
-             detail={"success": False, "message": "Either 'content' or 'reviewer_file_id' must be provided for conversion."},
-         )
-    
+    # Variables initialized to None for error handling/cleanup
     temp_md_path = None
     temp_docx_path = None
-    original_file_name = "downloaded_document.md"
     
     try:
-        # --- 1. Determine Content Source and Filename ---
+        # --- 1. Get File Metadata (Name) from Appwrite Storage ---
         
-        if not markdown_content and reviewer_file_id:
-            # Scenario 2: Content missing, but ID provided -> Download from Appwrite
-            
-            # Get Metadata
-            file_metadata = cloud_storage.get_file(
-                bucket_id=APPWRITE_BUCKET_ID,
-                file_id=reviewer_file_id
-            )
-            original_file_name = file_metadata.get('name') or original_file_name
-            
-            # Download Content
-            md_file_bytes = cloud_storage.get_file_download(
-                bucket_id=APPWRITE_BUCKET_ID,
-                file_id=reviewer_file_id
-            )
-            markdown_content = md_file_bytes.decode('utf-8')
+        file_metadata = cloud_storage.get_file(
+            bucket_id=APPWRITE_BUCKET_ID,
+            file_id=reviewer_file_id
+        )
+        original_file_name = file_metadata.get('name')
+        if not original_file_name:
+            raise Exception("File metadata is missing the file name.")
 
-        elif markdown_content and reviewer_file_id:
-            # Scenario 1 (Primary): Content provided, ID provided (for naming)
-            
-            # Get Metadata only for the filename
-            try:
-                file_metadata = cloud_storage.get_file(
-                    bucket_id=APPWRITE_BUCKET_ID,
-                    file_id=reviewer_file_id
-                )
-                original_file_name = file_metadata.get('name') or original_file_name
-            except AppwriteException:
-                # If metadata fails, continue with default name based on ID
-                original_file_name = f"reviewer_file_{reviewer_file_id}.md"
-
-
-        # --- 2. Setup Paths & Filename ---
+        # --- 2. Setup Paths ---
         
-        unique_prefix = reviewer_file_id or os.urandom(8).hex()
+        # Use the file ID as a unique prefix for temp files
+        unique_prefix = reviewer_file_id
         temp_md_path = os.path.join(tempfile.gettempdir(), f"{unique_prefix}.md")
         temp_docx_path = os.path.join(tempfile.gettempdir(), f"{unique_prefix}.docx")
         
-        # Construct the final output filename 
+        # Construct the final output filename based on the source MD file name
+        # The MD file name should look like: "(Reviewer) Source Document Name.md"
+        # We want the DOCX file to be: "Source Document Name.docx" or similar.
+        
+        # Remove the file extension (.md) and the "(Reviewer) " prefix if present.
         base_name_no_ext = os.path.splitext(original_file_name)[0]
-        output_filename = f"{base_name_no_ext.replace('(Reviewer) ', '')}.docx"
         
-        # --- 3. Write Markdown Content to Temp File ---
+        output_filename = f"{base_name_no_ext}.docx"
         
-        with open(temp_md_path, "w", encoding="utf-8") as f:
-            f.write(markdown_content)
+        # --- 3. Download Reviewer MD File from Appwrite ---
+        
+        md_file_bytes = cloud_storage.get_file_download(
+            bucket_id=APPWRITE_BUCKET_ID,
+            file_id=reviewer_file_id
+        )
+
+        # Write file bytes to a temporary local MD file
+        with open(temp_md_path, "wb") as f:
+            f.write(md_file_bytes)
 
         # --- 4. Perform the Conversion ---
         
         convert_md_to_docx(temp_md_path, temp_docx_path)
 
-        # --- 5. Return DOCX as a FileResponse ---
+        # --- 5. Return DOCX as a FileResponse (Force Download) ---
         
         return FileResponse(
             path=temp_docx_path,
@@ -120,18 +87,21 @@ async def download_reviewer_docx_endpoint(
         )
 
     except AppwriteException as e:
-         # Specific handling for errors during content download
-         detail_message = f"Cloud Storage Error during content retrieval: {e.message}"
-         if e.code == 404:
-              detail_message = "Reviewer file not found in cloud storage."
-         
-         raise HTTPException(
-             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-             detail={"success": False, "message": detail_message},
-         )
+        # Appwrite error handling (e.g., file not found - 404)
+        detail_message = f"Cloud Storage Error: {e.message}"
+        if e.code == 404:
+             detail_message = "Reviewer file not found in cloud storage."
 
+        if temp_md_path and os.path.exists(temp_md_path): os.remove(temp_md_path)
+        if temp_docx_path and os.path.exists(temp_docx_path): os.remove(temp_docx_path)
+        
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"success": False, "message": detail_message},
+        )
+        
     except Exception as e:
-        # General error handling
+        # General error handling (e.g., conversion failed)
         
         if temp_md_path and os.path.exists(temp_md_path): os.remove(temp_md_path)
         if temp_docx_path and os.path.exists(temp_docx_path): os.remove(temp_docx_path)
