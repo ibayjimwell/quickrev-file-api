@@ -1,12 +1,17 @@
-from fastapi import FastAPI, UploadFile, File, Form, Depends, APIRouter, Query
+from fastapi import FastAPI, UploadFile, File, Form, Depends, APIRouter, Query, Body
 from controllers.generate_controller import generate_reviewer_endpoint, generate_flashcards_endpoint
 from controllers.convert_controller import download_reviewer_docx_endpoint
-from controllers.cloud_controlller import upload_file_endpoint, files_listing_endpoint, view_file_endpoint, file_association_endpoint
+from controllers.cloud_controlller import upload_file_endpoint, files_listing_endpoint, view_file_endpoint, file_association_endpoint, update_file_content_endpoint
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
 # Import environment variables
 from dotenv import load_dotenv
 load_dotenv()
+
+class FileUpdatePayload(BaseModel):
+    file_id: str
+    content: str
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -58,12 +63,17 @@ async def generate_flashcards(
     ):
     return await generate_flashcards_endpoint(file_id, user_id, items, multiple_choice, identification, true_or_false, enumeration)
 
+from typing import Optional
+class DocxConvertRequest(BaseModel):
+    reviewer_file_id: Optional[str] = None
+    content: Optional[str] = None
+
 # Download Reviewer into DOCX Endpoint
 @app.post("/download/reviewer/docx")
 async def download_reviewer_docx(
-        reviewer_file_id: str = Form(...),
+        request_data: DocxConvertRequest = Body(...),
     ):
-    return await download_reviewer_docx_endpoint(reviewer_file_id)
+    return await download_reviewer_docx_endpoint(request_data)
 
 # Upload File 
 @app.post('/cloud/file/upload')
@@ -96,3 +106,7 @@ async def file_association(
     ):
     return await file_association_endpoint(source_file_id)
 
+# --- New File Update Route ---
+@app.put("/cloud/file/update")
+async def update_file_route(payload: FileUpdatePayload = Body(...)):
+    return await update_file_content_endpoint(payload)
