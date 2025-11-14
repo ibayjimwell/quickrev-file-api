@@ -20,40 +20,57 @@ def generate_reviewer(content: str) -> str:
 def generate_flashcards(content: str, config: dict) -> str:
     """
     Generates a list of flashcards in JSON format from the provided content
-    based on the specified configuration. The prompt is strictly set for JSON-only output.
+    based on the specified configuration (now using quantities instead of booleans).
+    The prompt is strictly set for JSON-only output.
     """
 
-    # Build the Constraints and Instructions
-    enabled_types = []
-    if config.get('trueorfalse'):
-        enabled_types.append('True or False')
-    if config.get('multiplechoice'):
-        enabled_types.append('Multiple Choice')
-    if config.get('identification'):
-        enabled_types.append('Identification')
-    if config.get('enumeration'):
-        enabled_types.append('Enumeration')
+    # 1. Collect required types and their counts
+    type_counts = {
+        'Multiple Choice': config.get('multiplechoice', 0),
+        'Identification': config.get('identification', 0),
+        'True or False': config.get('trueorfalse', 0),
+        'Enumeration': config.get('enumeration', 0),
+    }
 
-    if not enabled_types:
-        raise ValueError("At least one flashcard type must be enabled in the config.")
+    # 2. Build the list of enabled types, their counts, and calculate total items
+    enabled_types_instructions = []
+    total_items = 0
     
-    types_list = ", ".join([f'"{t}"' for t in enabled_types])
-    num_items = config.get('num_items', 40) 
-    sort_order = "Multiple Choice, Identification, True or False, Enumeration"
+    # Iterate through the desired sort order to build the instructions
+    sort_order_types = [
+        'Multiple Choice', 
+        'Identification', 
+        'True or False', 
+        'Enumeration'
+    ]
 
-    # Read the Prompt
+    for type_name in sort_order_types:
+        count = type_counts[type_name]
+        if count > 0:
+            enabled_types_instructions.append(f"{type_name} (Quantity: {count})")
+            total_items += count
+
+    if total_items == 0:
+        # This check is technically handled earlier in generate_flashcards_endpoint, 
+        # but it's good practice to keep here for safety.
+        raise ValueError("The total number of flashcard items requested is zero.")
+    
+    # Format the list of types and their quantities for the prompt
+    types_quantity_list = "\n * ".join(enabled_types_instructions)
+    
+    # Read the Prompt (assuming read_prompt is defined elsewhere)
     base_prompt = read_prompt('generate_flashcards')
 
-    # Construct the Final Prompt
-    # Note: We put the instructions and content AFTER the base_prompt
-    # which starts with the strong "JSON ONLY" directive.
+    # 3. Construct the Final Prompt
     final_prompt = f"""
     {base_prompt}
 
     --- INSTRUCTIONS ---
-    1. The total number of flashcards to generate MUST be **{num_items}**.
-    2. The only allowed values for the 'Type' field are: {types_list}.
-    3. **SORTING REQUIREMENT**: The flashcards in the JSON array MUST be sorted by 'Type' in the following order: **{sort_order}**. Try to distribute the types evenly, maintaining this sort order.
+    1. The total number of flashcards to generate MUST be **{total_items}**.
+    2. The required breakdown of flashcard types and their exact quantities are:
+     * {types_quantity_list}
+    3. **SORTING REQUIREMENT**: The flashcards in the JSON array MUST be sorted by 'Type' in the following order: **Multiple Choice, Identification, True or False, Enumeration**.
+    4. **QUANTITY REQUIREMENT**: Strictly adhere to the quantity specified for each type.
 
     --- CONTENT TO ANALYZE ---
     ---
@@ -61,7 +78,7 @@ def generate_flashcards(content: str, config: dict) -> str:
     ---
     """
     
-    # Send the prompt to LLM and get the response
+    # Send the prompt to LLM and get the response (assuming send_prompt is defined elsewhere)
     generated_flashcards = send_prompt(final_prompt)
     return generated_flashcards
     

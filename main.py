@@ -50,13 +50,13 @@ async def generate_reviewer(
 async def generate_flashcards(
         file_id: str = Form(...), 
         user_id: str = Form(...),
-        items: int = Form(40),
-        multiple_choice: bool = Form(True),
-        identification: bool = Form(True),
-        true_or_false: bool = Form(True),
-        enumeration: bool = Form(True),
+        # REVISED: Replaced 'items: int = Form(40)' with quiz type counts (default to 10 each)
+        multiple_choice: int = Form(10),
+        identification: int = Form(10),
+        true_or_false: int = Form(10),
+        enumeration: int = Form(10),
     ):
-    return await generate_flashcards_endpoint(file_id, user_id, items, multiple_choice, identification, true_or_false, enumeration)
+    return await generate_flashcards_endpoint(file_id, user_id, multiple_choice, identification, true_or_false, enumeration)
 
 # Download Reviewer into DOCX Endpoint
 @app.post("/download/reviewer/docx")

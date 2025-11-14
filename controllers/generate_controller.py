@@ -178,12 +178,31 @@ async def generate_reviewer_endpoint(
 async def generate_flashcards_endpoint(
     file_id: str = Form(...), 
     user_id: str = Form(...),
-    items: int = Form(40),
-    multiple_choice: bool = Form(True),
-    identification: bool = Form(True),
-    true_or_false: bool = Form(True),
-    enumeration: bool = Form(True),
+    # REVISED: Replaced 'items: int = Form(40)' with quiz type counts (default to 10 each)
+    multiple_choice: int = Form(10),
+    identification: int = Form(10),
+    true_or_false: int = Form(10),
+    enumeration: int = Form(10),
 ) -> Dict[str, Any]:
+    
+    # --- 0. Input Validation and Clamping ---
+    def clamp_quiz_items(value: int) -> int:
+        """Clamps the input value between 0 and 100."""
+        return max(0, min(100, value))
+
+    # Apply clamping to all quiz type inputs
+    num_multiple_choice = clamp_quiz_items(multiple_choice)
+    num_identification = clamp_quiz_items(identification)
+    num_true_or_false = clamp_quiz_items(true_or_false)
+    num_enumeration = clamp_quiz_items(enumeration)
+
+    # Calculate total items after clamping
+    total_items = (
+        num_multiple_choice + 
+        num_identification + 
+        num_true_or_false + 
+        num_enumeration
+    )
     
     # Configuration Constants
     APPWRITE_BUCKET_ID = os.environ.get("APPWRITE_BUCKET_ID")
@@ -204,16 +223,28 @@ async def generate_flashcards_endpoint(
     original_file_name = None
     file_type = None
 
-    # Configuration for flashcard generation
+    # Configuration for flashcard generation (UPDATED to reflect counts)
     flashcards_config = {
-        "num_items": items,
-        "multiplechoice": multiple_choice,
-        "identification": identification,
-        "trueorfalse": true_or_false,
-        "enumeration": enumeration
+        # 'num_items' is no longer strictly needed if the LLM uses the counts below
+        # For compatibility with older LLM logic, we might pass the sum, 
+        # but the request was to remove it, so we rely on individual counts.
+        "num_items": total_items, 
+        "multiplechoice": num_multiple_choice,
+        "identification": num_identification,
+        "trueorfalse": num_true_or_false,
+        "enumeration": num_enumeration
     }
 
     try:
+        # Check if the total number of items is zero after clamping
+        if total_items == 0:
+            return {
+                "success": True,
+                "message": "Flashcard generation skipped as all item counts are zero.",
+                "file_id": None,
+                "flashcards": []
+            }
+            
         # --- 1. Get File Metadata from Appwrite Storage ---
         file_metadata = cloud_storage.get_file(
             bucket_id=APPWRITE_BUCKET_ID,
@@ -257,6 +288,8 @@ async def generate_flashcards_endpoint(
         clean_text = clean_txt(raw_text)
         
         # --- 3. Generate Flashcards ---
+        # NOTE: The generate_flashcards function (the LLM call) must be updated 
+        # on the LLM side to properly interpret the integer counts.
         flashcards_json_string = generate_flashcards(clean_text, flashcards_config)
         
         # Convert the JSON string into a native Python object (list/dict) for response
