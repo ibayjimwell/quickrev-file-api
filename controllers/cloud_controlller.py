@@ -414,3 +414,97 @@ async def file_association_endpoint(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"An unexpected server error occurred during file association retrieval: {type(e).__name__} - {str(e)}"
         )
+    
+
+# DELETE Endpoint Implementation
+async def delete_file_endpoint(
+    file_id: str = Query(...),
+    user_id: str = Query(...)
+):
+    """
+    Deletes a file from Appwrite Storage and its corresponding entry in the Database.
+    Endpoint: /cloud/file/delete (DELETE)
+    """
+
+    # 1. ⚙️ Pre-Flight Configuration Check
+    missing_config = []
+    if not APPWRITE_BUCKET_ID:
+        missing_config.append("APPWRITE_BUCKET_ID")
+    if not APPWRITE_DATABASE_ID:
+        missing_config.append("APPWRITE_DATABASE_ID")
+    if not FILE_COLLECTION_ID:
+        missing_config.append("FILE_COLLECTION_ID")
+
+    if missing_config:
+        print(f"CRITICAL CONFIG ERROR: Missing variables: {', '.join(missing_config)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Server Configuration Error: The backend is missing the following Appwrite environment IDs: {', '.join(missing_config)}. Please check your .env file or deployment setup.",
+        )
+        
+    document_id_to_delete = None
+
+    try:
+        # --- Step 1: Find the File Document ID in the Database ---
+        # This is a security check and fetches the $id for document deletion.
+        document_list = cloud_database.list_documents(
+            database_id=APPWRITE_DATABASE_ID,
+            collection_id=FILE_COLLECTION_ID,
+            queries=[
+                AppwriteQuery.equal("file_id", file_id),
+                AppwriteQuery.equal("user_id", user_id)
+            ]
+        )
+        
+        if document_list['total'] == 0:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"File not found in database for file_id: {file_id} and user_id: {user_id}. Cannot proceed with deletion.",
+            )
+        
+        # Get the Appwrite Document ID ($id)
+        document_id_to_delete = document_list['documents'][0]['$id']
+
+        # --- Step 2: Delete the File from Appwrite Storage Bucket ---
+        cloud_storage.delete_file(
+            bucket_id=APPWRITE_BUCKET_ID,
+            file_id=file_id,
+        )
+        
+        # --- Step 3: Delete the Document from the File Listings Database ---
+        cloud_database.delete_document(
+            database_id=APPWRITE_DATABASE_ID,
+            collection_id=FILE_COLLECTION_ID,
+            document_id=document_id_to_delete,
+        )
+
+        # --- Return Success ---
+        return {
+            "success": True, 
+            "message": f"File with ID '{file_id}' and its database record deleted successfully."
+        }
+
+    # 2. 🚨 Appwrite Exception Handling
+    except AppwriteException as e:
+        error_detail = f"Appwrite API Call Failed. Status: {e.code}. Message: {e.message}. Service: Storage/Database. File/Document: {file_id}."
+        print(f"APPWRITE DELETION FAILURE: {error_detail}")
+        
+        # Handle 404 specifically for a clear error message
+        status_code = status.HTTP_404_NOT_FOUND if e.code == 404 else (
+                      status.HTTP_400_BAD_REQUEST if e.code < 500 else status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        raise HTTPException(
+            status_code=status_code,
+            detail=error_detail
+        )
+        
+    # 3. 🛑 General Exception Handling
+    except HTTPException:
+        # Re-raise explicit HTTP exceptions (like the 404 from finding the document)
+        raise
+    except Exception as e:
+        print(f"GENERAL DELETION FAILURE: {type(e).__name__}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An unexpected server error occurred during file deletion: {type(e).__name__} - {str(e)}"
+        )

@@ -1,8 +1,9 @@
-from fastapi import FastAPI, UploadFile, File, Form, Depends, APIRouter, Query
+from fastapi import FastAPI, UploadFile, File, Form, Depends, APIRouter, Query, Body
 from controllers.generate_controller import generate_reviewer_endpoint, generate_flashcards_endpoint
 from controllers.convert_controller import download_reviewer_docx_endpoint
-from controllers.cloud_controlller import upload_file_endpoint, files_listing_endpoint, view_file_endpoint, file_association_endpoint
+from controllers.cloud_controlller import upload_file_endpoint, files_listing_endpoint, view_file_endpoint, file_association_endpoint, delete_file_endpoint
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
 # Import environment variables
 from dotenv import load_dotenv
@@ -95,4 +96,18 @@ async def file_association(
         source_file_id: str = Query(..., description="The Appwrite file_id of the original lesson file (the source).")
     ):
     return await file_association_endpoint(source_file_id)
+
+class DeleteFileRequest(BaseModel):
+    """Schema for the file deletion request body."""
+    file_id: str
+    user_id: str
+
+# Delete File
+@app.delete("/cloud/file/delete")
+async def delete_file(
+        file_id: str = Query(...),
+        user_id: str = Query(...)
+    ):
+    return await delete_file_endpoint(file_id, user_id)
+    
 
